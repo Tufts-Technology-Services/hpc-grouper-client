@@ -1,8 +1,12 @@
+rsa_key
+*.pem
+*.crt
+*.key
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
+*.egg-info/
 # C extensions
 *.so
 

@@ -1,0 +1,17 @@
+[project]
+name = "grouper-client"
+version = "0.1.0"
+description = "Python client for Grouper API used for HPC user management"
+readme = "README.md"
+authors = [
+  {name = "Chris Barnett", email = "Christopher.Barnett@tufts.edu"},
+]
+requires-python = ">= 3.8"
+dependencies = [
+    "requests",
+    "pyjwt",
+]
+
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
