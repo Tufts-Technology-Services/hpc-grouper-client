@@ -34,7 +34,7 @@ class AbstractClient:
         try:
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            if self.refresh_token is not None and retries > 0 and e.response.status_code == 403:
+            if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
                 self.renew_token(self.refresh_token)
                 self._send_get_request(endpoint, params, retries=(retries - 1))
             else:
@@ -50,7 +50,7 @@ class AbstractClient:
     def _send_patch_request(self, endpoint, payload, headers=None, skip_auth=False):
         return self._send_body('PATCH', endpoint, payload, headers, skip_auth)
     
-    def _send_body(self, http_method, endpoint, payload, headers=None, skip_auth=False):
+    def _send_body(self, http_method, endpoint, payload, headers=None, skip_auth=False, retries=2):
         if not skip_auth and self.token is None and self.refresh_token is not None:
             self.renew_token(self.refresh_token)
 
@@ -69,9 +69,11 @@ class AbstractClient:
         try:
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            print(payload)
-            print(f'Error: {e}')
-            raise e
+            if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
+                self.renew_token(self.refresh_token)
+                self._send_body(http_method, endpoint, payload, headers, skip_auth, retries=(retries - 1))
+            else:
+                raise e
         return r.json()
 
     def _send_delete_request(self, endpoint, body=None):
