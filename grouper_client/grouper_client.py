@@ -10,7 +10,7 @@ GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', 'RTGID:app:Deploy')
 
 
 class GrouperClient(AbstractClient):
-    def __init__(self, base_url=GROUPER_API_URL, entity_id=GROUPER_ENTITY_ID, 
+    def __init__(self, base_url=GROUPER_API_URL, entity_id=GROUPER_ENTITY_ID,
                  key_path=GROUPER_KEY_PATH, stem=GROUPER_HPC_STEM):
         self.url = base_url if base_url.endswith('/') else base_url + '/'
         self.entity_id = entity_id
@@ -45,15 +45,20 @@ class GrouperClient(AbstractClient):
                     }
         
         r = self._send_post_request("groups", payload)
+        # todo: handle multiple pages
         r = r['WsFindGroupsResults']['groupResults']
         if not details:
             return [i['extension'] for i in r]
         else:
             return r
 
-    def get_group_members(self, group_name,):
+    def get_group_members(self, group_name):
         """
-        {'WsGetMembersResults': {'subjectAttributeNames': ['name', 'description'], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookups: Array size: 1: [0]: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test]\n\n, memberFilter: All, includeSubjectDetail: true, actAsSubject: null, fieldName: null, subjectAttributeNames: null\n, paramNames: \n, params: null\n, sourceIds: null\n, pointInTimeFrom: null, pointInTimeTo: null, pageSize: null, pageNumber: null, sortString: null, ascending: null', 'success': 'T'}, 'responseMetadata': {'millis': '129', 'serverVersion': '5.14.0'}, 'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, 'wsSubjects': [{'resultCode': 'SUCCESS', 'success': 'T', 'memberId': 'a9106adb7c164c74b1b1c4e3219fadc7', 'id': '52689D2E3035295B3D59D73E7C52FF00', 'name': 'Christopher S Barnett', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Christopher S Barnett', 'Christopher S Barnett (cbarne02)']}, {'resultCode': 'SUCCESS', 'success': 'T', 'memberId': '3c25285699b342e18035e13a31a4cdd7', 'id': 'CA5561E5D361F25F279EAE09030AD145', 'name': 'Tom K. Phimmasen', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Tom K. Phimmasen', 'Tom K. Phimmasen (tphimm01)']}], 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}]}}
+        'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookups: Array size: 1: [0]: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test]\n\n, memberFilter: All, includeSubjectDetail: true, actAsSubject: null, fieldName: null, subjectAttributeNames: null\n, paramNames: \n, params: null\n, sourceIds: null\n, pointInTimeFrom: null, pointInTimeTo: null, pageSize: null, pageNumber: null, sortString: null, ascending: null', 'success': 'T'}, 
+        {'WsGetMembersResults': {'subjectAttributeNames': ['name', 'description'], 
+        'responseMetadata': {'millis': '129', 'serverVersion': '5.14.0'}, 
+        'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, 
+        'wsSubjects': [{'resultCode': 'SUCCESS', 'success': 'T', 'memberId': 'a9106adb7c164c74b1b1c4e3219fadc7', 'id': '52689D2E3035295B3D59D73E7C52FF00', 'name': 'Christopher S Barnett', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Christopher S Barnett', 'Christopher S Barnett (cbarne02)']}, {'resultCode': 'SUCCESS', 'success': 'T', 'memberId': '3c25285699b342e18035e13a31a4cdd7', 'id': 'CA5561E5D361F25F279EAE09030AD145', 'name': 'Tom K. Phimmasen', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Tom K. Phimmasen', 'Tom K. Phimmasen (tphimm01)']}], 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}]}}
         """
         payload = {
                     "WsRestGetMembersRequest": {
@@ -63,7 +68,9 @@ class GrouperClient(AbstractClient):
                         }]
                     }
                     }
-        return self._send_post_request("groups", payload)
+        resp = self._send_post_request("groups", payload)
+        resp = resp['WsGetMembersResults']['results'][0]['wsSubjects']
+        return [{i['id']: GrouperClient.extract_username(i['attributeValues'])} for i in resp if i['resultCode'] == 'SUCCESS']
     
     def get_group_id(self, group_name):
         payload = {
@@ -89,7 +96,9 @@ class GrouperClient(AbstractClient):
                         },
                         "replaceAllExisting": False
                     }
-        return self._send_post_request("groups", payload)
+        resp = self._send_post_request("groups", payload)
+        resp = resp['WsAddMemberResults']['results']
+        return [{i['wsSubject']['identifierLookup']: i['resultCode'] == 'SUCCESS'} for i in resp]
 
     def get_groups_for_member(self, member_id):
         """
@@ -119,23 +128,49 @@ class GrouperClient(AbstractClient):
                 },
                 "subjectLookups": members
             }}
-        return self._send_delete_request("groups", payload)
+        resp = self._send_delete_request("groups", payload)
+        resp = resp['WsDeleteMemberResults']['results']
+        return [{i['wsSubject']['identifierLookup']: i['resultCode'] == 'SUCCESS'} for i in resp]
 
-    def get_user_info(self, member_id):
-        # todo: useful?
+    @staticmethod
+    def extract_username(subject_attributes):
+        """
+        Parses the subject attributes to extract the username from the description.
+        :param
+        subject_attributes: The subject attributes list.
+        :return: username.
+        """
+        if subject_attributes is None:
+            return None
+        for s in subject_attributes:
+            if "(" in s and ")" in s:
+                # Extract the username from the string
+                # Example: "Christopher S Barnett (cbarne02)"
+                # We want to extract "cbarne02"
+                result = s[s.find("(")+1:s.find(")")]
+                if len(result) > 2:
+                    return result
+        return None
+
+
+    def get_users_info(self, member_ids):
         payload = {
             "WsRestGetSubjectsRequest": {
                 "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{
-                    "subjectId": member_id
-                }]
+                "wsSubjectLookups": [{"subjectId": m } for m in member_ids],
             }
         }
-        return self._send_post_request("subjects", payload)
-
+        r =  self._send_post_request("subjects", payload)
+        subject_list = r['WsGetSubjectsResults']['wsSubjects']
+        subject_list = [i for i in subject_list if i['resultCode'] == 'SUCCESS']
+        subject_list = {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in subject_list}
+        if len(subject_list.items()) != len(member_ids):
+            raise ValueError(f"Not all members were found in grouper: {subject_list}")
+        return subject_list.values()
+ 
     def create_group(self, group_name):
             """
-{'WsGroupSaveResults': {'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '382876a44eb546d7bdf62714450400dd', 'idIndex': '1002142', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS_INSERTED', 'success': 'T'}}], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupToSaves: Array size: 1: [0]: WsGroupToSave[\n  wsGroupLookup=WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test],\n  wsGroup=WsGroup[extension=chris_api_test,name=RTGID:app:Deploy:chris_api_...\n, actAsSubject: null, txType: NONE, paramNames: \n, params: null', 'success': 'T'}, 'responseMetadata': {'millis': '381', 'serverVersion': '5.14.0'}}}
+            {'WsGroupSaveResults': {'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '382876a44eb546d7bdf62714450400dd', 'idIndex': '1002142', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS_INSERTED', 'success': 'T'}}], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupToSaves: Array size: 1: [0]: WsGroupToSave[\n  wsGroupLookup=WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test],\n  wsGroup=WsGroup[extension=chris_api_test,name=RTGID:app:Deploy:chris_api_...\n, actAsSubject: null, txType: NONE, paramNames: \n, params: null', 'success': 'T'}, 'responseMetadata': {'millis': '381', 'serverVersion': '5.14.0'}}}
             """
             payload = {
                 "WsRestGroupSaveRequest":{
@@ -152,7 +187,7 @@ class GrouperClient(AbstractClient):
                     ]
                 }
                 }
-            return self._send_post_request("groups", payload)
+            return self._send_post_request("groups", payload)['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
     
     def delete_group(self, group_name):
         """
@@ -165,4 +200,4 @@ class GrouperClient(AbstractClient):
                 }]
             }
         }
-        return self._send_post_request("groups", payload)
+        return self._send_post_request("groups", payload)['WsGroupDeleteResults']['results'][0]['resultMetadata']['success'] == 'T'
