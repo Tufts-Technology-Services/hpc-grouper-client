@@ -19,12 +19,26 @@ class GrouperClient(AbstractClient):
         self.refresh_token = 'NA'
         
     def renew_token(self, refresh_token='NA'):
+        """
+        Renews the JWT token used for authentication.
+
+        :param refresh_token: this service does not use refresh tokens, so this is ignored.
+        :return: None
+        """
         with open(self.key_path) as f:
             key = f.read()
             encoded_jwt = jwt.encode({"iat": datetime.datetime.now(datetime.UTC).timestamp()}, key, algorithm="RS256")
             self.token = f"jwtUser_{self.entity_id}_{encoded_jwt}"
 
     def get_groups(self, page_number=1, page_size=100, stem=None, details=False):
+        """
+        Returns a list of groups with the given stem.
+        :param page_number: The page number to return.
+        :param page_size: The number of groups to return per page.
+        :param stem: The stem to return groups from. If None, the default stem is used.
+        :param details: If True, returns the full group details. If False, returns only the group names.
+        :return: A list of groups with the given stem.
+        """
         if stem is None:
             stem = self.stem
         payload = {
@@ -52,13 +66,11 @@ class GrouperClient(AbstractClient):
         else:
             return r
 
-    def get_group_members(self, group_name):
+    def get_group_members(self, group_name) -> dict:
         """
-        'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookups: Array size: 1: [0]: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test]\n\n, memberFilter: All, includeSubjectDetail: true, actAsSubject: null, fieldName: null, subjectAttributeNames: null\n, paramNames: \n, params: null\n, sourceIds: null\n, pointInTimeFrom: null, pointInTimeTo: null, pageSize: null, pageNumber: null, sortString: null, ascending: null', 'success': 'T'}, 
-        {'WsGetMembersResults': {'subjectAttributeNames': ['name', 'description'], 
-        'responseMetadata': {'millis': '129', 'serverVersion': '5.14.0'}, 
-        'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, 
-        'wsSubjects': [{'resultCode': 'SUCCESS', 'success': 'T', 'memberId': 'a9106adb7c164c74b1b1c4e3219fadc7', 'id': '52689D2E3035295B3D59D73E7C52FF00', 'name': 'Christopher S Barnett', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Christopher S Barnett', 'Christopher S Barnett (cbarne02)']}, {'resultCode': 'SUCCESS', 'success': 'T', 'memberId': '3c25285699b342e18035e13a31a4cdd7', 'id': 'CA5561E5D361F25F279EAE09030AD145', 'name': 'Tom K. Phimmasen', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Tom K. Phimmasen', 'Tom K. Phimmasen (tphimm01)']}], 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}]}}
+        Returns a list of members in the given group.
+        :param group_name: The name of the group to return members from.
+        :return: A dict of members in the given group. keys are the member ids, values are the usernames.
         """
         payload = {
                     "WsRestGetMembersRequest": {
@@ -70,9 +82,24 @@ class GrouperClient(AbstractClient):
                     }
         resp = self._send_post_request("groups", payload)
         resp = resp['WsGetMembersResults']['results'][0]['wsSubjects']
-        return [{i['id']: GrouperClient.extract_username(i['attributeValues'])} for i in resp if i['resultCode'] == 'SUCCESS']
+        return {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in resp if i['resultCode'] == 'SUCCESS'}
     
-    def get_group_id(self, group_name):
+    def is_user_in_group(self, group_name, user_id):
+        """
+        Checks if a specific user is a member of a given group.
+
+        :param group_name: The name of the group to check.
+        :param user_id: The unique identifier of the user.
+        :return: True if the user is in the group, False otherwise.
+        """
+        return user_id in self.get_group_members(group_name).values()
+
+    def get_group(self, group_name):
+        """
+        Returns the group object for the given group name.
+        :param group_name: The name of the group to return.
+        :return: The group object for the given group name.
+        """
         payload = {
                     "WsRestFindGroupsRequest":{
                         "wsQueryFilter": {
@@ -81,11 +108,36 @@ class GrouperClient(AbstractClient):
                         }
                     }
                 }
-        return self._send_post_request("groups", payload)['WsFindGroupsResults']['groupResults'][0]['uuid']
+        return self._send_post_request("groups", payload)['WsFindGroupsResults']
+   
+    def get_group_id(self, group_name):
+        """
+        Returns the group id for the given group name.
+        :param group_name: The name of the group to return the id for.
+        :return: The group id for the given group name.
+        """
+        return self.get_group(group_name)['groupResults'][0]['uuid']
+    
+    def group_exists(self, group_name):
+        """
+        Checks if a specific group exists.
+
+        :param group_name: The name of the group to check.
+        :return: True if the group exists, False otherwise.
+        """
+        try:
+            response = self.get_group(group_name)
+            return len(response['groupResults']) > 0
+        except KeyError:
+            return False
 
     def add_members_to_group(self, group_name, member_uids: list):
         """
-        {'WsAddMemberResults': {'results': [{'wsSubject': {'identifierLookup': 'cbarne02', 'resultCode': 'SUCCESS', 'success': 'T', 'id': '52689D2E3035295B3D59D73E7C52FF00', 'name': 'Christopher S Barnett', 'sourceId': 'tuftsedutrunk_SubSourceID'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}, {'wsSubject': {'identifierLookup': 'tphimm01', 'resultCode': 'SUCCESS', 'success': 'T', 'id': 'CA5561E5D361F25F279EAE09030AD145', 'name': 'Tom K. Phimmasen', 'sourceId': 'tuftsedutrunk_SubSourceID'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}], 'wsGroupAssigned': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookup: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test], subjectLookups: Array size: 2: [0]: WsSubjectLookup[subjectIdentifier=cbarne02]\n[1]: WsSubjectLookup[subjectIdent...\n, replaceAllExisting: false, actAsSubject: null, fieldName: null, txType: NONE, includeGroupDetail: false, includeSubjectDetail: false, subjectAttributeNames: null\n, params: null\n, disabledDate: null, enabledDate: null', 'success': 'T'}, 'responseMetadata': {'millis': '7731', 'serverVersion': '5.14.0'}}}
+        Adds members to a specific group.
+
+        :param group_name: The name of the group.
+        :param member_uids: A list of member unique identifiers to add.
+        :return: A list of dictionaries indicating the success status for each member.
         """
         payload = {
                     "WsRestAddMemberRequest":{
@@ -98,11 +150,15 @@ class GrouperClient(AbstractClient):
                     }
         resp = self._send_post_request("groups", payload)
         resp = resp['WsAddMemberResults']['results']
-        return [{i['wsSubject']['identifierLookup']: i['resultCode'] == 'SUCCESS'} for i in resp]
+        print(resp)
+        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'} for i in resp]
 
     def get_groups_for_member(self, member_id):
         """
-        {'WsGetGroupsResults': {'results': [{'wsGroups': [{'extension': 'c-admin', 'typeOfGroup': 'group', 'displayExtension': 'c-admin', 'displayName': 'RTGID:app:Deploy:c-admin', 'name': 'RTGID:app:Deploy:c-admin', 'uuid': '796387e220644200976ee323094ae1f7', 'idIndex': '1002042', 'enabled': 'T'}, {'extension': 'ccgpu', 'typeOfGroup': 'group', 'displayExtension': 'ccgpu', 'displayName': 'RTGID:app:Deploy:ccgpu', 'name': 'RTGID:app:Deploy:ccgpu', 'uuid': '82bd7831d6d14772940d688d7c626e2e', 'idIndex': '1002057', 'enabled': 'T'}, {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, {'extension': 'rtadmin', 'typeOfGroup': 'group', 'displayExtension': 'rtadmin', 'displayName': 'RTGID:app:Deploy:rtadmin', 'name': 'RTGID:app:Deploy:rtadmin', 'uuid': 'ee326aae65c6478b99def7f5cf565e5b', 'idIndex': '1002055', 'enabled': 'T'}, {'extension': 'TTS_RSCH_HPC_CLUSTER_LOGIN', 'typeOfGroup': 'group', 'displayExtension': 'TTS_RSCH_HPC_CLUSTER_LOGIN', 'displayName': 'RTGID:app:Deploy:TTS_RSCH_HPC_CLUSTER_LOGIN', 'name': 'RTGID:app:Deploy:TTS_RSCH_HPC_CLUSTER_LOGIN', 'uuid': '6fad8845f2af409084c5a16296b5ea8b', 'idIndex': '1001890', 'enabled': 'T'}], 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}, 'wsSubject': {'resultCode': 'SUCCESS', 'success': 'T', 'id': 'CA5561E5D361F25F279EAE09030AD145', 'name': 'Tom K. Phimmasen', 'sourceId': 'tuftsedutrunk_SubSourceID', 'attributeValues': ['Tom K. Phimmasen (tphimm01)']}}], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, subjectLookups: Array size: 1: [0]: WsSubjectLookup[subjectId=CA5561E5D361F25F279EAE09030AD145]\n\nmemberFilter: All, includeGroupDetail: false, actAsSubject: null\n, params: null\n fieldName1: null\n, scope: null, wsStemLookup: null\n, stemScope: null, enabled: null, pageSize: null, pageNumber: null, sortString: null, ascending: null\n, pointInTimeFrom: null, pointInTimeTo: null', 'success': 'T'}, 'subjectAttributeNames': ['description'], 'responseMetadata': {'millis': '59', 'serverVersion': '5.14.0'}}}
+        Retrieves the groups a specific member belongs to.
+
+        :param member_id: The unique identifier of the member.
+        :return: The response from the Grouper API containing group details.
         """
         payload = {
                     "WsRestGetGroupsRequest":{
@@ -118,7 +174,11 @@ class GrouperClient(AbstractClient):
     
     def remove_members_from_group(self, group_name, member_uids: list):
         """
-        {'WsDeleteMemberResults': {'results': [{'wsSubject': {'identifierLookup': 'cbarne02', 'resultCode': 'SUCCESS', 'success': 'T', 'id': '52689D2E3035295B3D59D73E7C52FF00', 'name': 'Christopher S Barnett', 'sourceId': 'tuftsedutrunk_SubSourceID'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'success': 'T'}}], 'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '24d52dbbdaca44deb92b591bd5b09be5', 'idIndex': '1002143', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookup: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test], subjectLookups: Array size: 1: [0]: WsSubjectLookup[subjectIdentifier=cbarne02]\n\n, actAsSubject: null, fieldName: null, txType: NONE\n, params: null', 'success': 'T'}, 'responseMetadata': {'millis': '348', 'serverVersion': '5.14.0'}}}
+        Removes members from a specific group.
+
+        :param group_name: The name of the group.
+        :param member_uids: A list of member unique identifiers to remove.
+        :return: A list of dictionaries indicating the success status for each member.
         """
         members = [{"subjectIdentifier": m} for m in member_uids]
         payload = {
@@ -130,34 +190,40 @@ class GrouperClient(AbstractClient):
             }}
         resp = self._send_delete_request("groups", payload)
         resp = resp['WsDeleteMemberResults']['results']
-        return [{i['wsSubject']['identifierLookup']: i['resultCode'] == 'SUCCESS'} for i in resp]
+        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'} for i in resp]
 
     @staticmethod
     def extract_username(subject_attributes):
         """
         Parses the subject attributes to extract the username from the description.
-        :param
-        subject_attributes: The subject attributes list.
-        :return: username.
+
+        :param subject_attributes: The subject attributes list.
+        :return: The extracted username or None if not found.
         """
         if subject_attributes is None:
             return None
         for s in subject_attributes:
             if "(" in s and ")" in s:
                 # Extract the username from the string
-                # Example: "Christopher S Barnett (cbarne02)"
-                # We want to extract "cbarne02"
+                # Example: "Eileen Dover (edover02)"
+                # We want to extract "edover02"
                 result = s[s.find("(")+1:s.find(")")]
                 if len(result) > 2:
                     return result
         return None
 
+    def get_users_by_id(self, member_ids):
+        """
+        Retrieves detailed information about specific users.
 
-    def get_users_info(self, member_ids):
+        :param member_ids: A list of member unique identifiers.
+        :return: A list of usernames for the provided member IDs.
+        :raises ValueError: If not all members are found in Grouper.
+        """
         payload = {
             "WsRestGetSubjectsRequest": {
                 "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{"subjectId": m } for m in member_ids],
+                "wsSubjectLookups": [{"subjectId": m } for m in member_ids]
             }
         }
         r =  self._send_post_request("subjects", payload)
@@ -167,31 +233,73 @@ class GrouperClient(AbstractClient):
         if len(subject_list.items()) != len(member_ids):
             raise ValueError(f"Not all members were found in grouper: {subject_list}")
         return subject_list.values()
+    
+    def get_users_by_username(self, member_uids):
+        """
+        Retrieves detailed information about specific users.
+
+        :param member_ids: A list of member unique identifiers.
+        :return: A list of usernames for the provided member IDs.
+        :raises ValueError: If not all members are found in Grouper.
+        """
+        payload = {
+            "WsRestGetSubjectsRequest": {
+                "includeSubjectDetail": "T",
+                "wsSubjectLookups": [{"subjectIdentifier": m } for m in member_uids]
+            }
+        }
+        r =  self._send_post_request("subjects", payload)
+        subject_list = r['WsGetSubjectsResults']['wsSubjects']
+        subject_list = [i for i in subject_list if i['resultCode'] == 'SUCCESS']
+        subject_list = {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in subject_list}
+        if len(subject_list.items()) != len(member_uids):
+            raise ValueError(f"Not all members were found in grouper: {subject_list}")
+        return subject_list.values()
  
+    def user_exists(self, user_id):
+        """
+        Checks if a specific user exists in Grouper.
+
+        :param user_id: The unique identifier of the user.
+        :return: True if the user exists, False otherwise.
+        """
+        r = self.get_users_by_username([user_id])
+        if len(r) == 0:
+            return False
+        if len(r) > 1:
+            raise ValueError(f"Multiple users found with the same ID: {user_id}")
+        return True
+        
     def create_group(self, group_name):
-            """
-            {'WsGroupSaveResults': {'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '382876a44eb546d7bdf62714450400dd', 'idIndex': '1002142', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS_INSERTED', 'success': 'T'}}], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupToSaves: Array size: 1: [0]: WsGroupToSave[\n  wsGroupLookup=WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test],\n  wsGroup=WsGroup[extension=chris_api_test,name=RTGID:app:Deploy:chris_api_...\n, actAsSubject: null, txType: NONE, paramNames: \n, params: null', 'success': 'T'}, 'responseMetadata': {'millis': '381', 'serverVersion': '5.14.0'}}}
-            """
-            payload = {
-                "WsRestGroupSaveRequest":{
-                    "wsGroupToSaves":[
-                        {
-                        "wsGroupLookup":{
-                            "groupName": f"{self.stem}:{group_name}",
-                        },
-                        "wsGroup":{
-                            "extension": group_name,
-                            "name": f"{self.stem}:{group_name}"
-                        }
-                        }
-                    ]
-                }
-                }
-            return self._send_post_request("groups", payload)['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
+        """
+        Creates a new group.
+
+        :param group_name: The name of the group to create.
+        :return: True if the group was successfully created, False otherwise.
+        """
+        payload = {
+            "WsRestGroupSaveRequest":{
+                "wsGroupToSaves":[
+                    {
+                    "wsGroupLookup":{
+                        "groupName": f"{self.stem}:{group_name}"
+                    },
+                    "wsGroup":{
+                        "extension": group_name,
+                        "name": f"{self.stem}:{group_name}"
+                    }
+                    }
+                ]
+            }
+            }
+        return self._send_post_request("groups", payload)['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
     
     def delete_group(self, group_name):
         """
-        {'WsGroupDeleteResults': {'results': [{'wsGroup': {'extension': 'chris_api_test', 'typeOfGroup': 'group', 'displayExtension': 'chris_api_test', 'displayName': 'RTGID:app:Deploy:chris_api_test', 'name': 'RTGID:app:Deploy:chris_api_test', 'uuid': '382876a44eb546d7bdf62714450400dd', 'idIndex': '1002142', 'enabled': 'T'}, 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': "Group 'RTGID:app:Deploy:chris_api_test' was deleted.", 'success': 'T'}}], 'resultMetadata': {'resultCode': 'SUCCESS', 'resultMessage': 'Success for: clientVersion: 5.14.0, wsGroupLookups: Array size: 1: [0]: WsGroupLookup[pitGroups=[],groupName=RTGID:app:Deploy:chris_api_test]\n\n, actAsSubject: null, txType: NONE, includeGroupDetail: false, paramNames: \n, params: null', 'success': 'T'}, 'responseMetadata': {'millis': '349', 'serverVersion': '5.14.0'}}}
+        Deletes a specific group.
+
+        :param group_name: The name of the group to delete.
+        :return: True if the group was successfully deleted, False otherwise.
         """
         payload = {
             "WsRestGroupDeleteRequest": {
