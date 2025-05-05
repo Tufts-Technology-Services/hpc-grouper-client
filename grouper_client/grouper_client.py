@@ -1,3 +1,28 @@
+"""
+Grouper Client Module
+
+This module provides a Python client for interacting with the Grouper API. 
+It includes functionality for managing groups, users, and memberships within 
+a Grouper environment.
+
+Classes:
+    - GrouperClient: A client for performing operations such as retrieving groups, 
+      managing group memberships, and checking user or group existence.
+
+Environment Variables:
+    - GROUPER_API_URL: The base URL for the Grouper API.
+    - GROUPER_ENTITY_ID: The entity ID used for authentication.
+    - GROUPER_KEY_PATH: The file path to the private key used for generating JWT tokens.
+    - GROUPER_HPC_STEM: The default stem for group operations (default: 'RTGID:app:Deploy').
+
+Dependencies:
+    - jwt: Used for generating JWT tokens for authentication.
+    - os: Used for accessing environment variables.
+    - datetime: Used for handling timestamps.
+
+Usage:
+    Instantiate the `GrouperClient` class and use its methods to interact with the Grouper API.
+"""
 import os
 import datetime
 import jwt
@@ -10,6 +35,43 @@ GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', 'RTGID:app:Deploy')
 
 
 class GrouperClient(AbstractClient):
+    """
+    GrouperClient Class
+
+    This class provides a client for interacting with the Grouper API. It allows for 
+    managing groups, users, and memberships within a Grouper environment. The client 
+    supports operations such as retrieving groups, checking group or user existence, 
+    managing group memberships, and creating or deleting groups.
+
+    Attributes:
+        - url (str): The base URL for the Grouper API.
+        - entity_id (str): The entity ID used for authentication.
+        - key_path (str): The file path to the private key used for generating JWT tokens.
+        - stem (str): The default stem for group operations.
+        - refresh_token (str): A placeholder for refresh tokens (not used in this implementation).
+
+    Methods:
+        - renew_token: Renews the JWT token used for authentication.
+        - get_groups: Retrieves a list of groups under a specific stem.
+        - get_group_members: Retrieves the members of a specific group.
+        - is_user_in_group: Checks if a specific user is a member of a given group.
+        - get_group: Retrieves the group object for a given group name.
+        - get_group_id: Retrieves the unique ID of a specific group.
+        - group_exists: Checks if a specific group exists.
+        - add_members_to_group: Adds members to a specific group.
+        - get_groups_for_member: Retrieves the groups a specific member belongs to.
+        - remove_members_from_group: Removes members from a specific group.
+        - extract_username: Parses subject attributes to extract a username.
+        - get_users_by_id: Retrieves detailed information about specific users by ID.
+        - get_users_by_username: Retrieves detailed information about specific users by username.
+        - user_exists: Checks if a specific user exists in Grouper.
+        - create_group: Creates a new group.
+        - delete_group: Deletes a specific group.
+
+    Usage:
+        Instantiate the `GrouperClient` class with the required parameters and use its 
+        methods to interact with the Grouper API.
+    """
     def __init__(self, base_url=GROUPER_API_URL, entity_id=GROUPER_ENTITY_ID,
                  key_path=GROUPER_KEY_PATH, stem=GROUPER_HPC_STEM):
         self.url = base_url if base_url.endswith('/') else base_url + '/'
@@ -17,7 +79,7 @@ class GrouperClient(AbstractClient):
         self.key_path = key_path
         self.stem = stem
         self.refresh_token = 'NA'
-        
+
     def renew_token(self, refresh_token='NA'):
         """
         Renews the JWT token used for authentication.
@@ -25,9 +87,12 @@ class GrouperClient(AbstractClient):
         :param refresh_token: this service does not use refresh tokens, so this is ignored.
         :return: None
         """
-        with open(self.key_path) as f:
+        with open(self.key_path, encoding='utf-8') as f:
             key = f.read()
-            encoded_jwt = jwt.encode({"iat": datetime.datetime.now(datetime.UTC).timestamp()}, key, algorithm="RS256")
+            encoded_jwt = jwt.encode({
+                "iat": datetime.datetime.now(datetime.UTC).timestamp()
+            }, key, algorithm="RS256")
+
             self.token = f"jwtUser_{self.entity_id}_{encoded_jwt}"
 
     def get_groups(self, page_number=1, page_size=100, stem=None, details=False):
@@ -36,28 +101,29 @@ class GrouperClient(AbstractClient):
         :param page_number: The page number to return.
         :param page_size: The number of groups to return per page.
         :param stem: The stem to return groups from. If None, the default stem is used.
-        :param details: If True, returns the full group details. If False, returns only the group names.
+        :param details: If True, returns the full group details. 
+            If False, returns only the group names.
         :return: A list of groups with the given stem.
         """
         if stem is None:
             stem = self.stem
         payload = {
-                    "WsRestFindGroupsRequest": {
-                        "wsQueryFilter": {
-                            "typeOfGroups": "group",
-                            "pageSize": str(page_size),
-                            "pageNumber": str(page_number),
-                            "sortString": "extension",
-                            "ascending": "T",
-                            "queryFilterType": "FIND_BY_STEM_NAME",
-                            "stemName": stem,
-                            "stemNameScope": "ALL_IN_SUBTREE",
-                            "enabled": "T"
-                        },
-                        "includeGroupDetail": "T"
-                        }
-                    }
-        
+            "WsRestFindGroupsRequest": {
+                "wsQueryFilter": {
+                    "typeOfGroups": "group",
+                    "pageSize": str(page_size),
+                    "pageNumber": str(page_number),
+                    "sortString": "extension",
+                    "ascending": "T",
+                    "queryFilterType": "FIND_BY_STEM_NAME",
+                    "stemName": stem,
+                    "stemNameScope": "ALL_IN_SUBTREE",
+                    "enabled": "T"
+                },
+                "includeGroupDetail": "T"
+            }
+        }
+
         r = self._send_post_request("groups", payload)
         # todo: handle multiple pages
         r = r['WsFindGroupsResults']['groupResults']
@@ -70,20 +136,21 @@ class GrouperClient(AbstractClient):
         """
         Returns a list of members in the given group.
         :param group_name: The name of the group to return members from.
-        :return: A dict of members in the given group. keys are the member ids, values are the usernames.
+        :return: A dict of members in the group. keys are member ids, values are usernames.
         """
         payload = {
-                    "WsRestGetMembersRequest": {
-                        "includeSubjectDetail": "T",
-                        "wsGroupLookups": [{
-                            "groupName": f"{self.stem}:{group_name}"
-                        }]
-                    }
-                    }
+            "WsRestGetMembersRequest": {
+                "includeSubjectDetail": "T",
+                "wsGroupLookups": [{
+                    "groupName": f"{self.stem}:{group_name}"
+                }]
+            }
+        }
         resp = self._send_post_request("groups", payload)
         resp = resp['WsGetMembersResults']['results'][0]['wsSubjects']
-        return {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in resp if i['resultCode'] == 'SUCCESS'}
-    
+        return {i['id']: GrouperClient.extract_username(i['attributeValues'])
+                for i in resp if i['resultCode'] == 'SUCCESS'}
+
     def is_user_in_group(self, group_name, user_id):
         """
         Checks if a specific user is a member of a given group.
@@ -101,15 +168,15 @@ class GrouperClient(AbstractClient):
         :return: The group object for the given group name.
         """
         payload = {
-                    "WsRestFindGroupsRequest":{
-                        "wsQueryFilter": {
-                        "groupName": f"{self.stem}:{group_name}",
-                        "queryFilterType": "FIND_BY_GROUP_NAME_EXACT",
-                        }
-                    }
+            "WsRestFindGroupsRequest": {
+                "wsQueryFilter": {
+                    "groupName": f"{self.stem}:{group_name}",
+                    "queryFilterType": "FIND_BY_GROUP_NAME_EXACT",
                 }
+            }
+        }
         return self._send_post_request("groups", payload)['WsFindGroupsResults']
-   
+
     def get_group_id(self, group_name):
         """
         Returns the group id for the given group name.
@@ -117,7 +184,7 @@ class GrouperClient(AbstractClient):
         :return: The group id for the given group name.
         """
         return self.get_group(group_name)['groupResults'][0]['uuid']
-    
+
     def group_exists(self, group_name):
         """
         Checks if a specific group exists.
@@ -140,18 +207,18 @@ class GrouperClient(AbstractClient):
         :return: A list of dictionaries indicating the success status for each member.
         """
         payload = {
-                    "WsRestAddMemberRequest":{
-                        "subjectLookups": [{"subjectIdentifier": m} for m in member_uids],
-                        "wsGroupLookup":{
-                            "groupName": f"{self.stem}:{group_name}"
-                            }
-                        },
-                        "replaceAllExisting": False
-                    }
+            "WsRestAddMemberRequest": {
+                "subjectLookups": [{"subjectIdentifier": m} for m in member_uids],
+                "wsGroupLookup": {
+                    "groupName": f"{self.stem}:{group_name}"
+                }
+            },
+            "replaceAllExisting": False
+        }
         resp = self._send_post_request("groups", payload)
         resp = resp['WsAddMemberResults']['results']
-        print(resp)
-        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'} for i in resp]
+        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'}
+                for i in resp]
 
     def get_groups_for_member(self, member_id):
         """
@@ -161,17 +228,17 @@ class GrouperClient(AbstractClient):
         :return: The response from the Grouper API containing group details.
         """
         payload = {
-                    "WsRestGetGroupsRequest":{
-                        "subjectLookups":[{
-                            "subjectId": member_id
-                        }],
-                        "subjectAttributeNames":[
-                            "description"
-                        ]
-                    }
-                }
+            "WsRestGetGroupsRequest": {
+                "subjectLookups": [{
+                    "subjectId": member_id
+                }],
+                "subjectAttributeNames": [
+                    "description"
+                ]
+            }
+        }
         return self._send_post_request("subjects", payload)
-    
+
     def remove_members_from_group(self, group_name, member_uids: list):
         """
         Removes members from a specific group.
@@ -190,7 +257,8 @@ class GrouperClient(AbstractClient):
             }}
         resp = self._send_delete_request("groups", payload)
         resp = resp['WsDeleteMemberResults']['results']
-        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'} for i in resp]
+        return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'}
+                for i in resp]
 
     @staticmethod
     def extract_username(subject_attributes):
@@ -223,17 +291,20 @@ class GrouperClient(AbstractClient):
         payload = {
             "WsRestGetSubjectsRequest": {
                 "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{"subjectId": m } for m in member_ids]
+                "wsSubjectLookups": [{"subjectId": m} for m in member_ids]
             }
         }
-        r =  self._send_post_request("subjects", payload)
+        r = self._send_post_request("subjects", payload)
         subject_list = r['WsGetSubjectsResults']['wsSubjects']
-        subject_list = [i for i in subject_list if i['resultCode'] == 'SUCCESS']
-        subject_list = {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in subject_list}
+        subject_list = [
+            i for i in subject_list if i['resultCode'] == 'SUCCESS']
+        subject_list = {i['id']: GrouperClient.extract_username(
+            i['attributeValues']) for i in subject_list}
         if len(subject_list.items()) != len(member_ids):
-            raise ValueError(f"Not all members were found in grouper: {subject_list}")
+            raise ValueError(
+                f"Not all members were found in grouper: {subject_list}")
         return subject_list.values()
-    
+
     def get_users_by_username(self, member_uids):
         """
         Retrieves detailed information about specific users.
@@ -245,17 +316,20 @@ class GrouperClient(AbstractClient):
         payload = {
             "WsRestGetSubjectsRequest": {
                 "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{"subjectIdentifier": m } for m in member_uids]
+                "wsSubjectLookups": [{"subjectIdentifier": m} for m in member_uids]
             }
         }
-        r =  self._send_post_request("subjects", payload)
+        r = self._send_post_request("subjects", payload)
         subject_list = r['WsGetSubjectsResults']['wsSubjects']
-        subject_list = [i for i in subject_list if i['resultCode'] == 'SUCCESS']
-        subject_list = {i['id']: GrouperClient.extract_username(i['attributeValues']) for i in subject_list}
+        subject_list = [
+            i for i in subject_list if i['resultCode'] == 'SUCCESS']
+        subject_list = {i['id']: GrouperClient.extract_username(
+            i['attributeValues']) for i in subject_list}
         if len(subject_list.items()) != len(member_uids):
-            raise ValueError(f"Not all members were found in grouper: {subject_list}")
+            raise ValueError(
+                f"Not all members were found in grouper: {subject_list}")
         return subject_list.values()
- 
+
     def user_exists(self, user_id):
         """
         Checks if a specific user exists in Grouper.
@@ -267,9 +341,10 @@ class GrouperClient(AbstractClient):
         if len(r) == 0:
             return False
         if len(r) > 1:
-            raise ValueError(f"Multiple users found with the same ID: {user_id}")
+            raise ValueError(
+                f"Multiple users found with the same ID: {user_id}")
         return True
-        
+
     def create_group(self, group_name):
         """
         Creates a new group.
@@ -278,22 +353,23 @@ class GrouperClient(AbstractClient):
         :return: True if the group was successfully created, False otherwise.
         """
         payload = {
-            "WsRestGroupSaveRequest":{
-                "wsGroupToSaves":[
+            "WsRestGroupSaveRequest": {
+                "wsGroupToSaves": [
                     {
-                    "wsGroupLookup":{
-                        "groupName": f"{self.stem}:{group_name}"
-                    },
-                    "wsGroup":{
-                        "extension": group_name,
-                        "name": f"{self.stem}:{group_name}"
-                    }
+                        "wsGroupLookup": {
+                            "groupName": f"{self.stem}:{group_name}"
+                        },
+                        "wsGroup": {
+                            "extension": group_name,
+                            "name": f"{self.stem}:{group_name}"
+                        }
                     }
                 ]
             }
-            }
-        return self._send_post_request("groups", payload)['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
-    
+        }
+        r = self._send_post_request("groups", payload)
+        return r['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
+
     def delete_group(self, group_name):
         """
         Deletes a specific group.
@@ -308,4 +384,5 @@ class GrouperClient(AbstractClient):
                 }]
             }
         }
-        return self._send_post_request("groups", payload)['WsGroupDeleteResults']['results'][0]['resultMetadata']['success'] == 'T'
+        r = self._send_post_request("groups", payload)
+        return r['WsGroupDeleteResults']['results'][0]['resultMetadata']['success'] == 'T'
