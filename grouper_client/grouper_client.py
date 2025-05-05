@@ -90,7 +90,7 @@ class GrouperClient(AbstractClient):
         with open(self.key_path, encoding='utf-8') as f:
             key = f.read()
             encoded_jwt = jwt.encode({
-                "iat": datetime.datetime.now(datetime.UTC).timestamp()
+                "iat": datetime.datetime.now(datetime.timezone.utc).timestamp()
             }, key, algorithm="RS256")
 
             self.token = f"jwtUser_{self.entity_id}_{encoded_jwt}"
@@ -151,15 +151,15 @@ class GrouperClient(AbstractClient):
         return {i['id']: GrouperClient.extract_username(i['attributeValues'])
                 for i in resp if i['resultCode'] == 'SUCCESS'}
 
-    def is_user_in_group(self, group_name, user_id):
+    def is_user_in_group(self, group_name, user_uid):
         """
         Checks if a specific user is a member of a given group.
 
         :param group_name: The name of the group to check.
-        :param user_id: The unique identifier of the user.
+        :param user_uid: The unique identifier of the user.
         :return: True if the user is in the group, False otherwise.
         """
-        return user_id in self.get_group_members(group_name).values()
+        return user_uid in self.get_group_members(group_name).values()
 
     def get_group(self, group_name):
         """
