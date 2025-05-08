@@ -144,9 +144,9 @@ class GrouperClient(AbstractClient):
         ))
         resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
 
-        return self.handle_get_group_members_response(resp)
+        return self.__handle_get_group_members_response(resp)
  
-    def handle_get_group_members_response(self, response):
+    def __handle_get_group_members_response(self, response):
         """
         Handles the response from the Grouper API for group members.
         :param response: The response from the Grouper API.
@@ -218,9 +218,9 @@ class GrouperClient(AbstractClient):
         ))
 
         resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
-        return self.handle_add_members_response(resp)
+        return self.__handle_add_members_response(resp)
     
-    def handle_add_members_response(self, response):
+    def __handle_add_members_response(self, response):
         """
         Handles the response from the Grouper API for adding members to a group.
         :param response: The response from the Grouper API.
@@ -260,9 +260,9 @@ class GrouperClient(AbstractClient):
         ))
 
         resp = self._send_delete_request("groups", payload.model_dump(exclude_unset=True))
-        return self.handle_remove_members_response(resp)
+        return self.__handle_remove_members_response(resp)
     
-    def handle_remove_members_response(self, response):
+    def __handle_remove_members_response(self, response):
         """
         Handles the response from the Grouper API for removing members from a group.
         :param response: The response from the Grouper API.
@@ -307,10 +307,10 @@ class GrouperClient(AbstractClient):
         ))
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
-        subject_list = self.handle_get_users_response(r)
-        return self.extract_and_validate_users_found(subject_list, member_ids)
+        subject_list = self.__handle_get_users_response(r)
+        return self.__extract_and_validate_users_found(subject_list, member_ids)
     
-    def handle_get_users_response(self, response):
+    def __handle_get_users_response(self, response):
         """
         Handles the response from the Grouper API for user details.
         :param response: The response from the Grouper API.
@@ -320,7 +320,7 @@ class GrouperClient(AbstractClient):
         return {i['id']: GrouperClient.extract_username(i['attributeValues'])
                 for i in resp if i['resultCode'] == 'SUCCESS'}
     
-    def extract_and_validate_users_found(self, subject_list, member_ids):
+    def __extract_and_validate_users_found(self, subject_list, member_ids):
         if len(subject_list.items()) != len(member_ids):
             raise ValueError(f"Not all members were found in grouper: {subject_list}")
         return subject_list.values()
@@ -340,8 +340,8 @@ class GrouperClient(AbstractClient):
         ))
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
-        subject_list = self.handle_get_users_response(r)
-        return self.extract_and_validate_users_found(subject_list, member_uids)
+        subject_list = self.__handle_get_users_response(r)
+        return self.__extract_and_validate_users_found(subject_list, member_uids)
 
     def user_exists(self, user_id):
         """
@@ -381,7 +381,7 @@ class GrouperClient(AbstractClient):
         ))
         
         r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
-        return self.result_metadata_success(r['WsGroupSaveResults']['results'])
+        return self.__result_metadata_success(r['WsGroupSaveResults']['results'])
 
     def delete_group(self, group_name):
         """
@@ -395,9 +395,9 @@ class GrouperClient(AbstractClient):
                 wsGroupLookups=[{"groupName": self.get_qualified_groupname(group_name)}]
         ))
         r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
-        return self.result_metadata_success(r['WsGroupDeleteResults']['results'])
+        return self.__result_metadata_success(r['WsGroupDeleteResults']['results'])
     
-    def result_metadata_success(self, results):
+    def __result_metadata_success(self, results):
         """
         Checks if the result metadata indicates success.
 
