@@ -27,6 +27,7 @@ import os
 import datetime
 import jwt
 from grouper_client.abstract_client import AbstractClient
+from grouper_client.models import *
 
 GROUPER_API_URL = os.getenv('GROUPER_API_URL', None)
 GROUPER_ENTITY_ID = os.getenv('GROUPER_ENTITY_ID', None)
@@ -107,24 +108,22 @@ class GrouperClient(AbstractClient):
         """
         if stem is None:
             stem = self.stem
-        payload = {
-            "WsRestFindGroupsRequest": {
-                "wsQueryFilter": {
-                    "typeOfGroups": "group",
-                    "pageSize": str(page_size),
-                    "pageNumber": str(page_number),
-                    "sortString": "extension",
-                    "ascending": "T",
-                    "queryFilterType": "FIND_BY_STEM_NAME",
-                    "stemName": stem,
-                    "stemNameScope": "ALL_IN_SUBTREE",
-                    "enabled": "T"
-                },
-                "includeGroupDetail": "T"
-            }
-        }
+        payload = FindGroupsRequest(WsRestFindGroupsRequest=WsRestFindGroupsRequest(
+            wsQueryFilter=WsQueryFilter(
+                typeOfGroups='group',
+                pageSize=page_size,
+                pageNumber=page_number,
+                sortString='extension',
+                ascending=True,
+                queryFilterType='FIND_BY_STEM_NAME',
+                stemName=stem,
+                stemNameScope='ALL_IN_SUBTREE',
+                enabled=True
+            ),
+            includeGroupDetail=True
+        ))
 
-        r = self._send_post_request("groups", payload)
+        r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         # todo: handle multiple pages
         r = r['WsFindGroupsResults']['groupResults']
         if not details:
@@ -138,15 +137,12 @@ class GrouperClient(AbstractClient):
         :param group_name: The name of the group to return members from.
         :return: A dict of members in the group. keys are member ids, values are usernames.
         """
-        payload = {
-            "WsRestGetMembersRequest": {
-                "includeSubjectDetail": "T",
-                "wsGroupLookups": [{
-                    "groupName": f"{self.stem}:{group_name}"
-                }]
-            }
-        }
-        resp = self._send_post_request("groups", payload)
+        payload = GetGroupMembersRequest(
+            WsRestGetMembersRequest=WsRestGetMembersRequest(
+                includeSubjectDetail=True,
+                wsGroupLookups=[{"groupName": f"{self.stem}:{group_name}"}]
+        ))
+        resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         resp = resp['WsGetMembersResults']['results'][0]['wsSubjects']
         return {i['id']: GrouperClient.extract_username(i['attributeValues'])
                 for i in resp if i['resultCode'] == 'SUCCESS'}
@@ -167,15 +163,14 @@ class GrouperClient(AbstractClient):
         :param group_name: The name of the group to return.
         :return: The group object for the given group name.
         """
-        payload = {
-            "WsRestFindGroupsRequest": {
-                "wsQueryFilter": {
-                    "groupName": f"{self.stem}:{group_name}",
-                    "queryFilterType": "FIND_BY_GROUP_NAME_EXACT",
-                }
-            }
-        }
-        return self._send_post_request("groups", payload)['WsFindGroupsResults']
+        payload = FindGroupsRequest(WsRestFindGroupsRequest=WsRestFindGroupsRequest(
+            wsQueryFilter=WsQueryFilter(
+                groupName=f"{self.stem}:{group_name}",
+                queryFilterType='FIND_BY_GROUP_NAME_EXACT'
+            )
+        ))
+
+        return self._send_post_request("groups", payload.model_dump(exclude_unset=True))['WsFindGroupsResults']
 
     def get_group_id(self, group_name):
         """
@@ -206,16 +201,14 @@ class GrouperClient(AbstractClient):
         :param member_uids: A list of member unique identifiers to add.
         :return: A list of dictionaries indicating the success status for each member.
         """
-        payload = {
-            "WsRestAddMemberRequest": {
-                "subjectLookups": [{"subjectIdentifier": m} for m in member_uids],
-                "wsGroupLookup": {
-                    "groupName": f"{self.stem}:{group_name}"
-                }
-            },
-            "replaceAllExisting": False
-        }
-        resp = self._send_post_request("groups", payload)
+        payload = AddMembersRequest(
+            WsRestAddMemberRequest=WsRestAddMemberRequest(
+                wsGroupLookup={"groupName": f"{self.stem}:{group_name}"},
+                subjectLookups=[{"subjectIdentifier": m} for m in member_uids],
+                replaceAllExisting=False
+        ))
+
+        resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         resp = resp['WsAddMemberResults']['results']
         return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'}
                 for i in resp]
@@ -227,17 +220,13 @@ class GrouperClient(AbstractClient):
         :param member_id: The unique identifier of the member.
         :return: The response from the Grouper API containing group details.
         """
-        payload = {
-            "WsRestGetGroupsRequest": {
-                "subjectLookups": [{
-                    "subjectId": member_id
-                }],
-                "subjectAttributeNames": [
-                    "description"
-                ]
-            }
-        }
-        return self._send_post_request("subjects", payload)
+        payload = GetGroupsForUserRequest(
+            WsRestGetGroupsRequest=WsRestGetGroupsRequest(
+                subjectLookups=[{"subjectId": member_id}],
+                subjectAttributeNames=["description"]
+        ))
+
+        return self._send_post_request("subjects", payload.model_dump(exclude_unset=True))['WsGetGroupsResults']
 
     def remove_members_from_group(self, group_name, member_uids: list):
         """
@@ -247,15 +236,13 @@ class GrouperClient(AbstractClient):
         :param member_uids: A list of member unique identifiers to remove.
         :return: A list of dictionaries indicating the success status for each member.
         """
-        members = [{"subjectIdentifier": m} for m in member_uids]
-        payload = {
-            "WsRestDeleteMemberRequest": {
-                "wsGroupLookup": {
-                    "groupName": f"{self.stem}:{group_name}"
-                },
-                "subjectLookups": members
-            }}
-        resp = self._send_delete_request("groups", payload)
+        payload = RemoveMembersRequest(
+            WsRestDeleteMemberRequest=WsRestDeleteMemberRequest(
+                wsGroupLookup={"groupName": f"{self.stem}:{group_name}"},
+                subjectLookups=[{"subjectIdentifier": m} for m in member_uids]
+        ))
+
+        resp = self._send_delete_request("groups", payload.model_dump(exclude_unset=True))
         resp = resp['WsDeleteMemberResults']['results']
         return [{i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'}
                 for i in resp]
@@ -288,13 +275,13 @@ class GrouperClient(AbstractClient):
         :return: A list of usernames for the provided member IDs.
         :raises ValueError: If not all members are found in Grouper.
         """
-        payload = {
-            "WsRestGetSubjectsRequest": {
-                "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{"subjectId": m} for m in member_ids]
-            }
-        }
-        r = self._send_post_request("subjects", payload)
+        payload = GetUsersRequest(
+            WsRestGetSubjectsRequest=WsRestGetSubjectsRequest(
+                includeSubjectDetail=True,
+                wsSubjectLookups=[{"subjectId": m} for m in member_ids]
+        ))
+
+        r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
         subject_list = r['WsGetSubjectsResults']['wsSubjects']
         subject_list = [
             i for i in subject_list if i['resultCode'] == 'SUCCESS']
@@ -313,13 +300,13 @@ class GrouperClient(AbstractClient):
         :return: A list of usernames for the provided member IDs.
         :raises ValueError: If not all members are found in Grouper.
         """
-        payload = {
-            "WsRestGetSubjectsRequest": {
-                "includeSubjectDetail": "T",
-                "wsSubjectLookups": [{"subjectIdentifier": m} for m in member_uids]
-            }
-        }
-        r = self._send_post_request("subjects", payload)
+        payload = GetUsersRequest(
+            WsRestGetSubjectsRequest=WsRestGetSubjectsRequest(
+                includeSubjectDetail=True,
+                wsSubjectLookups=[{"subjectIdentifier": m} for m in member_uids]
+        ))
+
+        r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
         subject_list = r['WsGetSubjectsResults']['wsSubjects']
         subject_list = [
             i for i in subject_list if i['resultCode'] == 'SUCCESS']
@@ -352,9 +339,9 @@ class GrouperClient(AbstractClient):
         :param group_name: The name of the group to create.
         :return: True if the group was successfully created, False otherwise.
         """
-        payload = {
-            "WsRestGroupSaveRequest": {
-                "wsGroupToSaves": [
+        payload = SaveGroupRequest(
+            WsRestGroupSaveRequest=WsRestGroupSaveRequest(
+                wsGroupToSaves=[
                     {
                         "wsGroupLookup": {
                             "groupName": f"{self.stem}:{group_name}"
@@ -365,9 +352,9 @@ class GrouperClient(AbstractClient):
                         }
                     }
                 ]
-            }
-        }
-        r = self._send_post_request("groups", payload)
+        ))
+        
+        r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         return r['WsGroupSaveResults']['results'][0]['resultMetadata']['success'] == 'T'
 
     def delete_group(self, group_name):
@@ -377,12 +364,9 @@ class GrouperClient(AbstractClient):
         :param group_name: The name of the group to delete.
         :return: True if the group was successfully deleted, False otherwise.
         """
-        payload = {
-            "WsRestGroupDeleteRequest": {
-                "wsGroupLookups": [{
-                    "groupName": f"{self.stem}:{group_name}"
-                }]
-            }
-        }
-        r = self._send_post_request("groups", payload)
+        payload = DeleteGroupRequest(
+            WsRestGroupDeleteRequest=WsRestGroupDeleteRequest(
+                wsGroupLookups=[{"groupName": f"{self.stem}:{group_name}"}]
+        ))
+        r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         return r['WsGroupDeleteResults']['results'][0]['resultMetadata']['success'] == 'T'

@@ -10,7 +10,8 @@ requires-python = ">= 3.8"
 dependencies = [
     "requests",
     "pyjwt",
-    "cryptography"
+    "cryptography",
+    "pydantic"
 ]
 
 [build-system]
