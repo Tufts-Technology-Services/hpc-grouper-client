@@ -27,7 +27,25 @@ import os
 import datetime
 import jwt
 from grouper_client.abstract_client import AbstractClient
-from grouper_client.models import *
+from grouper_client.models import (
+    FindGroupsRequest,
+    WsRestFindGroupsRequest,
+    WsQueryFilter,
+    GetGroupMembersRequest,
+    WsRestGetMembersRequest,
+    AddMembersRequest,
+    WsRestAddMemberRequest,
+    RemoveMembersRequest,
+    WsRestDeleteMemberRequest,
+    GetGroupsForUserRequest,
+    WsRestGetGroupsRequest,
+    GetUsersRequest,
+    WsRestGetSubjectsRequest,
+    SaveGroupRequest,
+    WsRestGroupSaveRequest,
+    DeleteGroupRequest,
+    WsRestGroupDeleteRequest
+)
 
 GROUPER_API_URL = os.getenv('GROUPER_API_URL', None)
 GROUPER_ENTITY_ID = os.getenv('GROUPER_ENTITY_ID', None)
@@ -269,8 +287,11 @@ class GrouperClient(AbstractClient):
         :return: A dictionary of members removed from the group. keys are member ids, values are usernames.
         """
         resp = response['WsDeleteMemberResults']['results']
-        return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
-                for i in resp}
+        try:
+            return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
+                    for i in resp}
+        except KeyError:
+            return resp
 
     @staticmethod
     def extract_username(subject_attributes):
