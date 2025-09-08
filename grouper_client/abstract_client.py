@@ -74,6 +74,7 @@ class AbstractClient:
                 self._send_body(http_method, endpoint, payload, headers, skip_auth, retries=(retries - 1))
             else:
                 raise e
+        #print(r.headers)
         return r.json()
 
     def _send_delete_request(self, endpoint, body=None):

@@ -114,7 +114,7 @@ class GrouperClient(AbstractClient):
 
             self.token = f"jwtUser_{self.entity_id}_{encoded_jwt}"
 
-    def get_groups(self, page_number=1, page_size=100, stem=None, details=False):
+    def get_groups(self, page_number=1, page_size=10000, stem=None, details=False):
         """
         Returns a list of groups with the given stem.
         :param page_number: The page number to return.
@@ -140,9 +140,7 @@ class GrouperClient(AbstractClient):
             ),
             includeGroupDetail=True
         ))
-
         r = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
-        # todo: handle multiple pages
         r = r['WsFindGroupsResults']['groupResults']
         if not details:
             return [i['extension'] for i in r]
