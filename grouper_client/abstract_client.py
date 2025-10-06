@@ -1,6 +1,10 @@
 from urllib.parse import urljoin
 import os
+import logging
 import requests
+
+
+logger = logging.getLogger('grouper_client')
 
 VERIFY_CERTS = os.getenv('VERIFY_CERTS', 'True').lower() in ['true', '1', 'yes']
 
@@ -26,12 +30,17 @@ class AbstractClient:
         if self.token is None and self.refresh_token is not None:
             self.renew_token(self.refresh_token)
 
+        logger.debug("%s %s payload: %s", "GET", urljoin(self.url, endpoint), params)
+        headers = self._get_headers()
+        logger.debug("Headers: %s", headers)
         r = requests.get(urljoin(self.url, endpoint),
-                         params=params if not None else {},
-                         headers=self._get_headers(),
+                         params=params if params is not None else {},
+                         headers=headers,
                          verify=VERIFY_CERTS,
                          timeout=30)
         try:
+            logger.debug("Response status: %s", r.status_code)
+            logger.debug("Response body: %s", r.text)
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
@@ -61,12 +70,18 @@ class AbstractClient:
         headers = headers if headers is not None else {}
         headers.update({'Content-Type': 'application/json'})
 
+        logger.debug("%s %s payload: %s", http_method, urljoin(self.url, endpoint), payload)
+        headers = self._get_headers(headers, skip_auth=skip_auth)
+        logger.debug("Headers: %s", headers)
         r = requests.request(http_method, urljoin(self.url, endpoint),
                           json=payload,
-                          headers=self._get_headers(headers, skip_auth=skip_auth),
+                          headers=headers,
                           verify=VERIFY_CERTS,
                           timeout=20)
+        
         try:
+            logger.debug("Response status: %s", r.status_code)
+            logger.debug("Response body: %s", r.text)
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
@@ -77,16 +92,29 @@ class AbstractClient:
         #print(r.headers)
         return r.json()
 
-    def _send_delete_request(self, endpoint, body=None):
+    def _send_delete_request(self, endpoint, body=None, retries=2):
         if body is not None:
             return self._send_body('DELETE', endpoint, body)
         if self.token is None and self.refresh_token is not None:
             self.renew_token(self.refresh_token)
 
+        logger.debug("%s %s payload: %s", "DELETE", urljoin(self.url, endpoint), body)
+        headers = self._get_headers()
+        logger.debug("Headers: %s", headers)
         r = requests.delete(urljoin(self.url, endpoint),
-                            headers=self._get_headers(),
+                            headers=headers,
                             verify=VERIFY_CERTS,
                             timeout=10)
 
-        r.raise_for_status()
-        return {'status': r.status_code}
+        try:
+            logger.debug("Response status: %s", r.status_code)
+            logger.debug("Response body: %s", r.text)
+            r.raise_for_status()
+            return {'status': r.status_code}
+        except requests.exceptions.HTTPError as e:
+            if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
+                self.renew_token(self.refresh_token)
+                self._send_delete_request(endpoint, body, retries=(retries - 1))
+            else:
+                raise e
+        

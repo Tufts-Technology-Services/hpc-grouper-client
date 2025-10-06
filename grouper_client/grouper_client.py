@@ -47,10 +47,11 @@ from grouper_client.models import (
     WsRestGroupDeleteRequest
 )
 
+
 GROUPER_API_URL = os.getenv('GROUPER_API_URL', None)
 GROUPER_ENTITY_ID = os.getenv('GROUPER_ENTITY_ID', None)
 GROUPER_KEY_PATH = os.getenv('GROUPER_KEY_PATH', None)
-GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', 'RTGID:app:Deploy')
+GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', None)
 
 
 class GrouperClient(AbstractClient):
@@ -93,6 +94,19 @@ class GrouperClient(AbstractClient):
     """
     def __init__(self, base_url=GROUPER_API_URL, entity_id=GROUPER_ENTITY_ID,
                  key_path=GROUPER_KEY_PATH, stem=GROUPER_HPC_STEM):
+        """
+        Initializes the GrouperClient with the provided parameters or environment variables.
+        :param base_url: The base URL for the Grouper API. 
+        :param entity_id: The entity ID used for authentication. Get this from Grouper.
+        :param key_path: The file path to the private key used for generating JWT tokens. 
+        :param stem: The default stem for group operations. e.g. 'RTGID:app:Deploy'
+        :return: None
+        :raises ValueError: If any of the required parameters are missing."""
+        if base_url is None or entity_id is None or key_path is None or stem is None:
+            raise ValueError("base_url, entity_id, key_path, and stem arguments are required. "
+                             "Alternatively, the "
+                             "GROUPER_API_URL, GROUPER_ENTITY_ID, GROUPER_KEY_PATH, and GROUPER_HPC_STEM "
+                             "environment variables may be set.")
         self.url = base_url if base_url.endswith('/') else base_url + '/'
         self.entity_id = entity_id
         self.key_path = key_path
@@ -103,7 +117,7 @@ class GrouperClient(AbstractClient):
         """
         Renews the JWT token used for authentication.
 
-        :param refresh_token: this service does not use refresh tokens, so this is ignored.
+        :param refresh_token: this service does not use refresh tokens, so this argument is ignored.
         :return: None
         """
         with open(self.key_path, encoding='utf-8') as f:
@@ -159,7 +173,6 @@ class GrouperClient(AbstractClient):
                 wsGroupLookups=[{"groupName": self.get_qualified_groupname(group_name)}]
         ))
         resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
-
         return self.__handle_get_group_members_response(resp)
  
     def __handle_get_group_members_response(self, response):
@@ -259,7 +272,8 @@ class GrouperClient(AbstractClient):
                 subjectAttributeNames=["description"]
         ))
 
-        return self._send_post_request("subjects", payload.model_dump(exclude_unset=True))['WsGetGroupsResults']
+        resp = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))['WsGetGroupsResults']
+        return resp
 
     def remove_members_from_group(self, group_name, member_uids: list):
         """
