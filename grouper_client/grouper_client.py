@@ -255,6 +255,8 @@ class GrouperClient(AbstractClient):
         :param response: The response from the Grouper API.
         :return: A dictionary of members added to the group. keys are member ids, values are usernames.
         """
+        if 'WsAddMemberResults' not in response or 'results' not in response['WsAddMemberResults']:
+            raise ValueError(f"Unexpected response from Grouper when adding members to group: {response}")
         resp = response['WsAddMemberResults']['results']
         return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
                 for i in resp}
