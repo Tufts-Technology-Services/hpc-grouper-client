@@ -182,7 +182,7 @@ class GrouperClient(AbstractClient):
         :return: A dictionary of members in the group. keys are member ids, values are usernames.
         """
         results = response['WsGetMembersResults']['results']
-        if len(results) == 0:
+        if len(results) == 0 or 'wsSubjects' not in results[0]:
             return {}
         resp = results[0]['wsSubjects']
 
