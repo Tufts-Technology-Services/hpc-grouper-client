@@ -181,7 +181,11 @@ class GrouperClient(AbstractClient):
         :param response: The response from the Grouper API.
         :return: A dictionary of members in the group. keys are member ids, values are usernames.
         """
-        resp = response['WsGetMembersResults']['results'][0]['wsSubjects']
+        results = response['WsGetMembersResults']['results']
+        if len(results) == 0:
+            return {}
+        resp = results[0]['wsSubjects']
+
         return {i['id']: GrouperClient.extract_username(i['attributeValues'])
                 for i in resp if i['resultCode'] == 'SUCCESS'}
 
