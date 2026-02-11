@@ -380,7 +380,9 @@ class GrouperClient(AbstractClient):
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
         subject_list = self.__handle_get_users_response(r)
-        return self.__extract_and_validate_users_found(subject_list, member_uids)
+        if len(subject_list.items()) != len(member_ids):
+            raise ValueError(f"Not all members were found in grouper: {subject_list}")
+        return subject_list.keys()
 
     def user_exists(self, user_id):
         """
