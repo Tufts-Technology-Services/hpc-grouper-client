@@ -6,7 +6,12 @@ import requests
 
 logger = logging.getLogger('grouper_client')
 
-VERIFY_CERTS = os.getenv('VERIFY_CERTS', 'True').lower() in ['true', '1', 'yes']
+VERIFY_CERTS = os.getenv('GROUPER_VERIFY_CERTS', 'True').lower() in ['true', '1', 'yes']
+CONNECT_TIMEOUT = int(os.getenv('GROUPER_CONNECT_TIMEOUT', '10'))
+READ_TIMEOUT = int(os.getenv('GROUPER_READ_TIMEOUT', '60'))
+TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+RETRIES = int(os.getenv('GROUPER_RETRIES', '3'))
+
 
 class AbstractClient:
     url = None
@@ -26,7 +31,7 @@ class AbstractClient:
             headers.update(additional_headers)
         return headers
 
-    def _send_get_request(self, endpoint, params=None, retries=2):
+    def _send_get_request(self, endpoint, params=None, retries=RETRIES):
         if self.token is None and self.refresh_token is not None:
             self.renew_token(self.refresh_token)
 
@@ -37,7 +42,7 @@ class AbstractClient:
                          params=params if params is not None else {},
                          headers=headers,
                          verify=VERIFY_CERTS,
-                         timeout=30)
+                         timeout=TIMEOUT)
         try:
             logger.debug("Response status: %s", r.status_code)
             logger.debug("Response body: %s", r.text)
@@ -45,6 +50,13 @@ class AbstractClient:
         except requests.exceptions.HTTPError as e:
             if self.refresh_token is not None and retries > 0 and e.response.status_code in [401, 403]:
                 self.renew_token(self.refresh_token)
+                self._send_get_request(endpoint, params, retries=(retries - 1))
+            else:
+                raise e
+        except requests.exceptions.Timeout as e:
+            logger.error("Timeout: %s", e)
+            if retries > 0:
+                logger.info("Retrying GET request to %s, retries left: %s", endpoint, retries)
                 self._send_get_request(endpoint, params, retries=(retries - 1))
             else:
                 raise e
@@ -59,7 +71,7 @@ class AbstractClient:
     def _send_patch_request(self, endpoint, payload, headers=None, skip_auth=False):
         return self._send_body('PATCH', endpoint, payload, headers, skip_auth)
     
-    def _send_body(self, http_method, endpoint, payload, headers=None, skip_auth=False, retries=2):
+    def _send_body(self, http_method, endpoint, payload, headers=None, skip_auth=False, retries=RETRIES):
         if not skip_auth and self.token is None and self.refresh_token is not None:
             self.renew_token(self.refresh_token)
 
@@ -77,7 +89,7 @@ class AbstractClient:
                           json=payload,
                           headers=headers,
                           verify=VERIFY_CERTS,
-                          timeout=20)
+                          timeout=TIMEOUT)
         
         try:
             logger.debug("Response status: %s", r.status_code)
@@ -89,10 +101,17 @@ class AbstractClient:
                 self._send_body(http_method, endpoint, payload, headers, skip_auth, retries=(retries - 1))
             else:
                 raise e
+        except requests.exceptions.Timeout as e:
+            logger.error("Timeout: %s", e)
+            if retries > 0:
+                logger.info("Retrying %s request to %s, retries left: %s", http_method, endpoint, retries)
+                self._send_body(http_method, endpoint, payload, headers, skip_auth, retries=(retries - 1))
+            else:
+                raise e
         #print(r.headers)
         return r.json()
 
-    def _send_delete_request(self, endpoint, body=None, retries=2):
+    def _send_delete_request(self, endpoint, body=None, retries=RETRIES):
         if body is not None:
             return self._send_body('DELETE', endpoint, body)
         if self.token is None and self.refresh_token is not None:
@@ -104,7 +123,7 @@ class AbstractClient:
         r = requests.delete(urljoin(self.url, endpoint),
                             headers=headers,
                             verify=VERIFY_CERTS,
-                            timeout=10)
+                            timeout=TIMEOUT)
 
         try:
             logger.debug("Response status: %s", r.status_code)
@@ -117,4 +136,10 @@ class AbstractClient:
                 self._send_delete_request(endpoint, body, retries=(retries - 1))
             else:
                 raise e
-        
+        except requests.exceptions.Timeout as e:
+            logger.error("Timeout: %s", e)
+            if retries > 0:
+                logger.info("Retrying DELETE request to %s, retries left: %s", endpoint, retries)
+                self._send_delete_request(endpoint, body, retries=(retries - 1))
+            else:
+                raise e
