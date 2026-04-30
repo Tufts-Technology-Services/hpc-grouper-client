@@ -24,6 +24,7 @@ Usage:
     Instantiate the `GrouperClient` class and use its methods to interact with the Grouper API.
 """
 import os
+from urllib.parse import quote
 import datetime
 import jwt
 import logging
@@ -46,6 +47,7 @@ from grouper_client.models import (
     WsRestGroupSaveRequest,
     DeleteGroupRequest,
     WsRestGroupDeleteRequest,
+    HasMemberRequest,
     WsRestHasMemberRequest
 )
 
@@ -201,10 +203,12 @@ class GrouperClient(AbstractClient):
         :param username: The username of the user.
         :return: True if the user is in the group, False otherwise.
         """
-        payload = WsRestHasMemberRequest(
-            subjectLookups=[{"subjectIdentifier": username}]
+        payload = HasMemberRequest(
+            WsRestHasMemberRequest=WsRestHasMemberRequest(
+                subjectLookups=[{"subjectIdentifier": username}]
+            )
         )
-        resp = self._send_post_request(f"groups/{self.get_qualified_groupname(group_name)}/members", payload.model_dump(exclude_unset=True))
+        resp = self._send_post_request(f"groups/{quote(self.get_qualified_groupname(group_name))}/members", payload.model_dump(exclude_unset=True))
         logger.debug("Response from has member request: %s", resp)
         results = resp['WsHasMemberResults']['results']
         if len(results) == 0:
