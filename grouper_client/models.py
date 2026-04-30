@@ -152,11 +152,11 @@ class DeleteGroupRequest(BaseModel):
     WsRestGroupDeleteRequest: WsRestGroupDeleteRequest
 
 
-class HasMemberRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, frozen=True)
-    WsRestHasMemberRequest: WsRestHasMemberRequest
-
-
 class WsRestHasMemberRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, frozen=True)
     subjectLookups: list[SubjectLookup]
+
+
+class HasMemberRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, frozen=True)
+    WsRestHasMemberRequest: WsRestHasMemberRequest
