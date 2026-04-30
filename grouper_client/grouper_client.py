@@ -214,7 +214,7 @@ class GrouperClient(AbstractClient):
         if len(results) == 0:
             logger.error("Unexpected response from Grouper when checking if user %s is in group %s: %s", username, group_name, resp)
             raise ValueError(f"Unexpected response from Grouper when checking if user {username} is in group {group_name}: {resp}")
-        return results[0]['resultMetadata']['resultCode'] == 'SUCCESS'
+        return results[0]['resultMetadata']['resultCode'] == 'IS_MEMBER'
 
 
     def get_group(self, group_name):
