@@ -26,6 +26,7 @@ Usage:
 import os
 import datetime
 import jwt
+import logging
 from grouper_client.abstract_client import AbstractClient
 from grouper_client.models import (
     FindGroupsRequest,
@@ -44,7 +45,8 @@ from grouper_client.models import (
     SaveGroupRequest,
     WsRestGroupSaveRequest,
     DeleteGroupRequest,
-    WsRestGroupDeleteRequest
+    WsRestGroupDeleteRequest,
+    WsRestHasMemberRequest
 )
 
 
@@ -52,6 +54,8 @@ GROUPER_API_URL = os.getenv('GROUPER_API_URL', None)
 GROUPER_ENTITY_ID = os.getenv('GROUPER_ENTITY_ID', None)
 GROUPER_KEY_PATH = os.getenv('GROUPER_KEY_PATH', None)
 GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', None)
+
+logger = logging.getLogger('grouper_client')
 
 
 class GrouperClient(AbstractClient):
@@ -189,15 +193,25 @@ class GrouperClient(AbstractClient):
         return {i['id']: GrouperClient.extract_username(i['attributeValues'])
                 for i in resp if i['resultCode'] == 'SUCCESS'}
 
-    def is_user_in_group(self, group_name, user_uid):
+    def is_user_in_group(self, group_name, username):
         """
         Checks if a specific user is a member of a given group.
 
         :param group_name: The name of the group to check.
-        :param user_uid: The unique identifier of the user.
+        :param username: The username of the user.
         :return: True if the user is in the group, False otherwise.
         """
-        return user_uid in self.get_group_members(group_name).values()
+        payload = WsRestHasMemberRequest(
+            subjectLookups=[{"subjectIdentifier": username}]
+        )
+        resp = self._send_post_request(f"groups/{self.get_qualified_groupname(group_name)}/members", payload.model_dump(exclude_unset=True))
+        logger.debug("Response from has member request: %s", resp)
+        results = resp['WsHasMemberResults']['results']
+        if len(results) == 0:
+            logger.error("Unexpected response from Grouper when checking if user %s is in group %s: %s", username, group_name, resp)
+            raise ValueError(f"Unexpected response from Grouper when checking if user {username} is in group {group_name}: {resp}")
+        return results[0]['resultMetadata']['resultCode'] == 'SUCCESS'
+
 
     def get_group(self, group_name):
         """
@@ -235,18 +249,18 @@ class GrouperClient(AbstractClient):
         except KeyError:
             return False
 
-    def add_members_to_group(self, group_name, member_uids: list):
+    def add_members_to_group(self, group_name, member_usernames: list):
         """
         Adds members to a specific group.
 
         :param group_name: The name of the group.
-        :param member_uids: A list of member unique identifiers to add.
+        :param member_usernames: A list of member usernames to add.
         :return: A list of dictionaries indicating the success status for each member.
         """
         payload = AddMembersRequest(
             WsRestAddMemberRequest=WsRestAddMemberRequest(
                 wsGroupLookup={"groupName": self.get_qualified_groupname(group_name)},
-                subjectLookups=[{"subjectIdentifier": m} for m in member_uids],
+                subjectLookups=[{"subjectIdentifier": m} for m in member_usernames],
                 replaceAllExisting=False
         ))
 
@@ -265,34 +279,34 @@ class GrouperClient(AbstractClient):
         return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
                 for i in resp}
 
-    def get_groups_for_member(self, member_id):
+    def get_groups_for_member(self, member_username):
         """
         Retrieves the groups a specific member belongs to.
 
-        :param member_id: The unique identifier of the member.
+        :param member_username: The username of the member.
         :return: The response from the Grouper API containing group details.
         """
         payload = GetGroupsForUserRequest(
             WsRestGetGroupsRequest=WsRestGetGroupsRequest(
-                subjectLookups=[{"subjectId": member_id}],
+                subjectLookups=[{"subjectIdentifier": member_username}],
                 subjectAttributeNames=["description"]
         ))
 
         resp = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))['WsGetGroupsResults']
         return resp
 
-    def remove_members_from_group(self, group_name, member_uids: list):
+    def remove_members_from_group(self, group_name, member_usernames: list):
         """
         Removes members from a specific group.
 
         :param group_name: The name of the group.
-        :param member_uids: A list of member unique identifiers to remove.
+        :param member_usernames: A list of member usernames to remove.
         :return: A list of dictionaries indicating the success status for each member.
         """
         payload = RemoveMembersRequest(
             WsRestDeleteMemberRequest=WsRestDeleteMemberRequest(
                 wsGroupLookup={"groupName": self.get_qualified_groupname(group_name)},
-                subjectLookups=[{"subjectIdentifier": m} for m in member_uids]
+                subjectLookups=[{"subjectIdentifier": m} for m in member_usernames]
         ))
 
         resp = self._send_delete_request("groups", payload.model_dump(exclude_unset=True))
@@ -364,37 +378,37 @@ class GrouperClient(AbstractClient):
             raise ValueError(f"Not all members were found in grouper: {subject_list}")
         return subject_list.values()
 
-    def get_users_by_username(self, member_uids):
+    def get_users_by_username(self, usernames):
         """
         Retrieves detailed information about specific users.
 
-        :param member_ids: A list of member unique identifiers.
-        :return: A list of usernames for the provided member IDs.
+        :param usernames: A list of usernames.
+        :return: A list of usernames for the provided usernames.
         :raises ValueError: If not all members are found in Grouper.
         """
         payload = GetUsersRequest(
             WsRestGetSubjectsRequest=WsRestGetSubjectsRequest(
                 includeSubjectDetail=True,
-                wsSubjectLookups=[{"subjectIdentifier": m} for m in member_uids]
+                wsSubjectLookups=[{"subjectIdentifier": m} for m in usernames]
         ))
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
         subject_list = self.__handle_get_users_response(r)
-        return self.__extract_and_validate_users_found(subject_list, member_uids)
+        return self.__extract_and_validate_users_found(subject_list, usernames)
 
-    def user_exists(self, user_id):
+    def user_exists(self, username):
         """
         Checks if a specific user exists in Grouper.
 
-        :param user_id: The unique identifier of the user.
+        :param username: The username of the user.
         :return: True if the user exists, False otherwise.
         """
-        r = self.get_users_by_username([user_id])
+        r = self.get_users_by_username([username])
         if len(r) == 0:
             return False
         if len(r) > 1:
             raise ValueError(
-                f"Multiple users found with the same ID: {user_id}")
+                f"Multiple users found with the same username: {username}")
         return True
 
     def create_group(self, group_name):
