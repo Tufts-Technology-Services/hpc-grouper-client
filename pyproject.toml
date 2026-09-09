@@ -1,6 +1,6 @@
 [project]
 name = "grouper-client"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python client for Grouper API used for HPC user management"
 readme = "README.md"
 authors = [
