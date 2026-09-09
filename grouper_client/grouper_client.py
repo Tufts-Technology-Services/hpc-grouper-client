@@ -24,6 +24,7 @@ Usage:
     Instantiate the `GrouperClient` class and use its methods to interact with the Grouper API.
 """
 import os
+import re
 from urllib.parse import quote
 import datetime
 import jwt
@@ -344,9 +345,8 @@ class GrouperClient(AbstractClient):
                 # Extract the username from the string
                 # Example: "Eileen Dover (edover02)"
                 # We want to extract "edover02"
-                result = s[s.find("(")+1:s.find(")")]
-                if len(result) > 2:
-                    return result
+                matches = re.findall(r'\(([^()]*)\)', s)
+                return matches[-1] if matches else None
         return None
 
     def get_users_by_id(self, member_ids):
