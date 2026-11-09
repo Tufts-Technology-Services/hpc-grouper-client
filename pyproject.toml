@@ -1,6 +1,6 @@
 [project]
 name = "grouper-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "Python client for Grouper API used for HPC user management"
 readme = "README.md"
 authors = [
@@ -17,3 +17,11 @@ dependencies = [
 [build-system]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
