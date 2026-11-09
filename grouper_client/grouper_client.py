@@ -60,6 +60,12 @@ GROUPER_HPC_STEM = os.getenv('GROUPER_HPC_STEM', None)
 
 logger = logging.getLogger('grouper_client')
 
+# the subject attribute holding the username; asked for by name, since Grouper's defaults leave it out
+USERNAME_ATTRIBUTE = 'uid'
+
+# a username in parentheses at the end of a subject's description: "Eileen Dover (edover02)"
+USERNAME_AT_END = re.compile(r'\(([^()\s]+)\)\s*$')
+
 
 class GrouperClient(AbstractClient):
     """
@@ -176,8 +182,9 @@ class GrouperClient(AbstractClient):
         """
         payload = GetGroupMembersRequest(
             WsRestGetMembersRequest=WsRestGetMembersRequest(
-                includeSubjectDetail=True,
-                wsGroupLookups=[{"groupName": self.get_qualified_groupname(group_name)}]
+                includeSubjectDetail=False,
+                wsGroupLookups=[{"groupName": self.get_qualified_groupname(group_name)}],
+                subjectAttributeNames=[USERNAME_ATTRIBUTE],
         ))
         resp = self._send_post_request("groups", payload.model_dump(exclude_unset=True))
         return self.__handle_get_group_members_response(resp)
@@ -192,8 +199,9 @@ class GrouperClient(AbstractClient):
         if len(results) == 0 or 'wsSubjects' not in results[0]:
             return {}
         resp = results[0]['wsSubjects']
+        attribute_names = response['WsGetMembersResults'].get('subjectAttributeNames')
 
-        return {i['id']: GrouperClient.extract_username(i['attributeValues'])
+        return {i['id']: GrouperClient.read_username(i.get('attributeValues'), attribute_names)
                 for i in resp if i['resultCode'] == 'SUCCESS'}
 
     def is_user_in_group(self, group_name, username):
@@ -280,9 +288,7 @@ class GrouperClient(AbstractClient):
         """
         if 'WsAddMemberResults' not in response or 'results' not in response['WsAddMemberResults']:
             raise ValueError(f"Unexpected response from Grouper when adding members to group: {response}")
-        resp = response['WsAddMemberResults']['results']
-        return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
-                for i in resp}
+        return GrouperClient.member_outcomes(response['WsAddMemberResults']['results'])
 
     def get_groups_for_member(self, member_username):
         """
@@ -323,30 +329,64 @@ class GrouperClient(AbstractClient):
         :param response: The response from the Grouper API.
         :return: A dictionary of members removed from the group. keys are member ids, values are usernames.
         """
-        resp = response['WsDeleteMemberResults']['results']
-        try:
-            return {i['wsSubject']['identifierLookup']: i['wsSubject']['resultCode'] == 'SUCCESS'
-                    for i in resp}
-        except KeyError:
-            return resp
+        return GrouperClient.member_outcomes(response['WsDeleteMemberResults']['results'])
 
     @staticmethod
-    def extract_username(subject_attributes):
+    def member_outcomes(results):
+        """
+        Reads the per-member results of adding members to a group or removing them.
+
+        :param results: The response's results, one per member.
+        :return: A dict of username to whether the change succeeded. Grouper counts a change that
+            was already in place (SUCCESS_ALREADY_EXISTED, SUCCESS_WASNT_IMMEDIATE) as a success.
+            A member it couldn't find has no identifierLookup; its subject id is the lookup instead.
+        """
+        outcomes = {}
+        for result in results:
+            subject = result.get('wsSubject', {})
+            username = subject.get('identifierLookup') or subject.get('id')
+            outcomes[username] = result.get('resultMetadata', {}).get('success') == 'T'
+        return outcomes
+
+    @staticmethod
+    def read_username(attribute_values, attribute_names):
+        """
+        Reads a subject's username from its uid attribute.
+
+        :param attribute_values: The subject's attributeValues.
+        :param attribute_names: The response's subjectAttributeNames, which name those values in order.
+        :return: The username, or None if the subject has no uid.
+        """
+        if not attribute_values or not attribute_names or USERNAME_ATTRIBUTE not in attribute_names:
+            return None
+        index = list(attribute_names).index(USERNAME_ATTRIBUTE)
+        if index >= len(attribute_values):
+            return None
+        return (attribute_values[index] or "").strip() or None
+
+    @staticmethod
+    def extract_username(subject_attributes, attribute_names=None):
         """
         Parses the subject attributes to extract the username from the description.
 
         :param subject_attributes: The subject attributes list.
+        :param attribute_names: The names of those attributes, in the same order, as the response's
+            subjectAttributeNames gives them. With "description" among them, only that value is read.
         :return: The extracted username or None if not found.
         """
-        if subject_attributes is None:
+        if not subject_attributes:
             return None
-        for s in subject_attributes:
-            if "(" in s and ")" in s:
-                # Extract the username from the string
-                # Example: "Eileen Dover (edover02)"
-                # We want to extract "edover02"
-                matches = re.findall(r'\(([^()]*)\)', s)
-                return matches[-1] if matches else None
+        values = subject_attributes
+        if attribute_names and "description" in attribute_names:
+            index = list(attribute_names).index("description")
+            if index < len(subject_attributes):
+                values = [subject_attributes[index]]
+        for value in values:
+            # "Eileen Dover (edover02)" gives "edover02". Only parentheses at the very end count: a
+            # display name can have its own, as "Kim(Jiwoo) Park" does.
+            match = USERNAME_AT_END.search(value or "")
+            if match:
+                return match.group(1)
         return None
 
     def get_users_by_id(self, member_ids):
@@ -359,8 +399,9 @@ class GrouperClient(AbstractClient):
         """
         payload = GetUsersRequest(
             WsRestGetSubjectsRequest=WsRestGetSubjectsRequest(
-                includeSubjectDetail=True,
-                wsSubjectLookups=[{"subjectId": m} for m in member_ids]
+                includeSubjectDetail=False,
+                wsSubjectLookups=[{"subjectId": m} for m in member_ids],
+                subjectAttributeNames=[USERNAME_ATTRIBUTE],
         ))
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))
@@ -374,7 +415,8 @@ class GrouperClient(AbstractClient):
         :return: A dictionary of users. keys are user ids, values are usernames.
         """
         resp = response['WsGetSubjectsResults']['wsSubjects']
-        return {i['id']: GrouperClient.extract_username(i['attributeValues'])
+        attribute_names = response['WsGetSubjectsResults'].get('subjectAttributeNames')
+        return {i['id']: GrouperClient.read_username(i.get('attributeValues'), attribute_names)
                 for i in resp if i['resultCode'] == 'SUCCESS'}
     
     def __extract_and_validate_users_found(self, subject_list, member_ids):
@@ -392,8 +434,9 @@ class GrouperClient(AbstractClient):
         """
         payload = GetUsersRequest(
             WsRestGetSubjectsRequest=WsRestGetSubjectsRequest(
-                includeSubjectDetail=True,
-                wsSubjectLookups=[{"subjectIdentifier": m} for m in usernames]
+                includeSubjectDetail=False,
+                wsSubjectLookups=[{"subjectIdentifier": m} for m in usernames],
+                subjectAttributeNames=[USERNAME_ATTRIBUTE],
         ))
 
         r = self._send_post_request("subjects", payload.model_dump(exclude_unset=True))

@@ -70,6 +70,8 @@ class WsRestGetMembersRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, frozen=True)
     includeSubjectDetail: bool
     wsGroupLookups: list[WsGroupLookup]
+    # attributes to return besides Grouper's defaults; the response lists them all in subjectAttributeNames
+    subjectAttributeNames: Optional[list[str]] = None
 
     @field_serializer('includeSubjectDetail')
     def serialize_include_subject_detail(self, value) -> str:
@@ -112,6 +114,8 @@ class WsRestGetSubjectsRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, frozen=True)
     includeSubjectDetail: bool
     wsSubjectLookups: list[SubjectLookup]
+    # attributes to return besides Grouper's defaults; the response lists them all in subjectAttributeNames
+    subjectAttributeNames: Optional[list[str]] = None
 
     @field_serializer('includeSubjectDetail')
     def serialize_include_subject_detail(self, value) -> str:
